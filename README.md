@@ -96,7 +96,7 @@ Tug foregoes external messaging queues like Kafka or RabbitMQ for simplicity and
 Tug uses [compare-versions](https://github.com/omichelsen/compare-versions) to compare Git tags. Tug only supports [Semantic Versioning](https://semver.org/). Using other version schemes can cause tug to malfunction.
 
 #### How does tug manage state?
-Repositories adhere to the following state diagram.
+Repositories adhere to the following state diagram. You can see the current repository state via `GET /status`.
 
 ```
                                                   Idle
@@ -109,7 +109,7 @@ Initializing ▶ Idle ▶ Checking for updates ▶ Pulling updates ▶ Installin
 
 `Idle`: This is the default state for repositories. This state means nothing is happening and the repository is ready for updates. Tug will transition a repository out of this state when it receives a webhook at `/:username/:repository` (to `Checking for updates`).
 
-`Checking for updates`: This state means that Tug is checking the most recent release list from GitHub to see if it should update code locally. Tug will transition a repository out of this state when it receives a list of releases (to `Pulling updates`) or it cannot access the repository (to `Error`).
+`Checking for updates`: This state means that Tug is checking the most recent release list from GitHub to see if it should update code locally. Tug will transition a repository out of this state when it receives a list of releases (to `Pulling updates`) or it cannot access the repository's releases (e.g. there are no releases yet) (to `Error`).
 
 `Pulling updates`: This state means tug is attempting to pull updates from GitHub for the repository. Tug will transition a repository out of this state when it downloads a new update (to `Installing updates`), it determines a previous update was downloaded but not installed (to `Installing updates`), it determines no new update is available (to `Idle`), it cannot download updates (to `Error`), or it cannot sort updates based on Git tag (to `Error`).
 
