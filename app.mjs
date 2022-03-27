@@ -166,7 +166,7 @@ app.get('/status', async (req, res, next) => {
 })
 
 // tug (pull) new release for specific repository
-app.get('/:user/:repo', async (req, res, next) => {
+app.post('/:user/:repo', async (req, res, next) => {
 	// when this route is hit, it means a new release has been published
 	// via GitHub webhooks
 
