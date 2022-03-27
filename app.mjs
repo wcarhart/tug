@@ -53,7 +53,6 @@ const validate = async () => {
 				headers: { Authorization: `token ${CONFIG.token}` }
 			})
 		} catch (e) {
-			console.error(e)
 			console.error(`Could not find repository '${repository}', is it available with the provided GitHub access token?`)
 			process.exit(1)
 		}
