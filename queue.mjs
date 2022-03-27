@@ -51,8 +51,16 @@ class QueueManager {
 	async restore() {
 		console.log('Restoring queues...')
 		let filename = path.join(this.source, 'queue.json')
+
+		// if there isn't a queue backup, return
 		try {
 			await fs.promises.access(filename)
+		} catch (e) {
+			return
+		}
+
+		// attempt to restore queues from local backup
+		try {
 			let data = JSON.parse(await fs.promises.readFile(filename))
 			for (let queueName in data) {
 				let unconsumed = []

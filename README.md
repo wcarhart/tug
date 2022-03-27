@@ -52,6 +52,7 @@ git clone git@github.com:wcarhart/tug.git
 cd tug
 yarn install
 # copy any necessary .env files to VM
+# set up tug config.json as desired
 yarn prod # verify this works, should see app at domain/IP
 pm2 start yarn --interpreter bash -- prod # verify this works, should see app at domain/IP
 pm2 startup systemd
