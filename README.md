@@ -19,6 +19,13 @@ Tug deploys code based on its configurations in [config.json](config.json) file.
 |`releases`|false|string|The path where your releases will be downloaded (this directory will be created if it does not exist) (default: `./releases`).|`./myreleases`|
 |`reboot`|false|string|A shell command to run after your tug is complete. You can use `$repository` to reference your repository's name in the command.|`pm2 restart $repository`|
 
+## Available endpoints
+Use `GET /` to see the available repositories with tug.
+
+Use `GET /status` to see repository statuses.
+
+Use `GET /:username/:repository` to attempt to pull a new update for repository `username/repository`.
+
 ## Deploy
 Tug is a Node.js app and can be deployed many different ways. Here is how to do it with [PM2](https://pm2.keymetrics.io/).
 
@@ -85,3 +92,26 @@ Tug doesn't actually use the incoming webhook to trigger any new code downloads.
 
 #### How does tug manage queuing?
 Tug foregoes external messaging queues like Kafka or RabbitMQ for simplicity and uses an in-memory queue service. The generalized queue service is defined in [queue.mjs](queue.mjs) and the consumer specific to tug's repository functionality is defined in [consumer.mjs](consumer.mjs) and registered in [app.mjs](app.mjs).
+
+#### How does tug compare versions?
+Tug uses [compare-versions](https://github.com/omichelsen/compare-versions) to compare Git tags. Tug only supports [Semantic Versioning](https://semver.org/). Using other version schemes can cause tug to malfunction.
+
+#### How does tug manage state?
+Repositories adhere to the following state diagram.
+
+```
+Initializing -> Idle <-> Checking for updates -> Pulling updates -> Installing updates -> Done -> Idle
+                                   ▼                    ▼                     ▼
+                                 Error                Error                 Error
+```
+`Initializing`: Repositories are initializing when there is no queue state defined for them. This only happens once at first app boot. Tug will transition a repository out of this state once a queue event has been produced for this repository.
+
+`Idle`: This is the default state for repositories. This state means nothing is happening and the repository is ready for updates. Tug will transition a repository out of this state when it receives a webhook at `/:username/:repository` (to `Checking for updates`).
+
+`Checking for updates`: This state means that Tug is checking the most recent release list from GitHub to see if it should update code locally. Tug will transition a repository out of this state when it receives a list of releases (to `Pulling updates`) or if it cannot access the repository (to `Error`).
+
+`Pulling updates`: This state means tug is attempting to pull updates from GitHub for the repository. Tug will transition a repository out of this state when it downloads a new update (to `Installing updates`), it determines a previous update was downloaded but not installed (to `Installing updates`), it cannot download updates (to `Error`), or it cannot sort updates based on Git tag (to `Error`).
+
+`Installing updates`: This state means that tug is attempting to install downloaded updates. Tug will transition a repository out of this state when updates have be installed (to `Done`), it can't unpack the downloaded update (to `Error`), it can't copy the unpacked update to the proper location (to `Error`), or it can't run the repository's reboot command (to `Error`).
+
+`Done`: This state means that tug has finished updating the repository's code. Tug will transition a repository out of this state automatically (to `Idle`).

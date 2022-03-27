@@ -147,18 +147,19 @@ app.get('/status', async (req, res, next) => {
 
 	for (let repository of CONFIG.repositories) {
 		let installedFile = path.resolve(path.join(CONFIG.releases, repository, '.installed'))
-		let latestRelease = ''
+		let version = ''
 		try {
 			await fs.promises.access(installedFile)
 			let fileContents = await fs.promises.readFile(installedFile)
-			latestRelease = fileContents.toString()
+			version = fileContents.toString()
 		} catch (e) {}
 
-		let repo = {
-			name: repository,
-			status: statuses[qm.queues[repository].consumed[qm.queues[repository].consumed.length - 1].data.command],
-			version: latestRelease
-		}
+		let status = 'initializing...'
+		try {
+			status = statuses[qm.queues[repository].consumed[qm.queues[repository].consumed.length - 1].data.command]
+		} catch (e) {}
+
+		let repo = { name: repository, status, version }
 		results.push(repo)
 	}
 	res.status(200).json(results)

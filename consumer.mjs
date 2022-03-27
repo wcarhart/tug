@@ -111,7 +111,27 @@ const handleTug = async (repository, details) => {
 		}
 	} else {
 		// this release has already been downloaded
-		await qm.produce(repository, new RepoCommand('DONE', repository))
+		let installedFile = path.resolve(path.join(CONFIG.releases, repository, '.installed'))
+		let version
+		try {
+			await fs.promises.access(installedFile)
+			let fileContents = await fs.promises.readFile(installedFile)
+			version = fileContents.toString()
+		} catch (e) {}
+
+		// if version is undefined, we downloaded the update but nothing is installed (first time)
+		if (version === undefined) {
+			await qm.produce(repository, new RepoCommand('UNPACK', repository, { release: tag }))
+
+		// if we have an installed version, the previous install probably failed
+		// if the tag > version, we should attempt to install the downloaded release
+		} else if (compareVersions(tag, version) === 1) {
+			await qm.produce(repository, new RepoCommand('UNPACK', repository, { release: tag }))
+
+		// otherwise, we've probably gotten duplicate requests for a downloaded and installed release
+		} else {
+			await qm.produce(repository, new RepoCommand('DONE', repository))
+		}
 	}
 }
 
