@@ -61,7 +61,7 @@ yarn install
 # copy any necessary .env files to VM
 # set up tug config.json as desired
 yarn prod # verify this works, should see app at domain/IP
-pm2 start yarn --interpreter bash -- prod # verify this works, should see app at domain/IP
+pm2 start yarn --name wcarhart/tug -- prod # verify this works, should see app at domain/IP
 pm2 startup systemd
 # this will spit out another command to run, make sure you run it VERBATIM
 pm2 save
@@ -73,7 +73,6 @@ sudo su pm2
 # replace 'wcarhart' with your username
 cd ~/code/wcarhart
 sudo systemctl start pm2-pm2
-pm2 restart app --name wcarhart/tug
 pm2 save
 ```
 Then, for each repository you've included in tug's config.json, [create a new webhook](https://docs.github.com/en/developers/webhooks-and-events/webhooks/creating-webhooks) in GitHub and point it to your VM's IP/domain so tug can receive the requests. **Tug runs on port 42369 by default.**
