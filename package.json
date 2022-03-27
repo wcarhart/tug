@@ -1,9 +1,9 @@
 {
   "name": "tug",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "main": "app.js",
   "author": "Will Carhart <carhartwill@gmail.com>",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "dependencies": {
     "axios": "^0.26.1",
     "compare-versions": "^4.1.3",
