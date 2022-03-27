@@ -61,6 +61,7 @@ const handleCheck = async (repository) => {
 		})
 		await qm.produce(repository, new RepoCommand('TUG', repository, { tag: response.data.tag_name }))
 	} catch (e) {
+		console.error(e)
 		await qm.produce(repository, new RepoCommand('ERROR', repository))
 	}
 }
@@ -78,7 +79,7 @@ const handleTug = async (repository, details) => {
 	try {
 		latestRelease = await getLatestLocalRelease(localReleases)
 	} catch (e) {
-		console.error(`Could not determine most recent local release from: ${localReleases.join(', ')}`)
+		console.error(e)
 		await qm.produce(repository, new RepoCommand('ERROR', repository))
 		return
 	}
@@ -87,26 +88,29 @@ const handleTug = async (repository, details) => {
 	if (!localReleases.includes(tag)) {
 		try {
 			if (latestRelease === undefined || compareVersions(tag, latestRelease) === 1) {
-				console.log(`Found new release ${tag}, downloading...`)
+				// found new release, attempting to download
 				try {
 					await downloadRelease(tag, `https://github.com/${repository}/archive/${tag}.tar.gz`, releasePath)
 				} catch (e) {
-					console.error('Error while downloading release')
+					// error occurred while downloading release
+					console.error(e)
 					await qm.produce(repository, new RepoCommand('ERROR', repository))
 					return
 				}
-				console.log(`Downloaded release ${tag} to ${path.resolve(releasePath)}`)
+
+				// downloaded new release
 				await qm.produce(repository, new RepoCommand('UNPACK', repository, { release: tag }))
 			} else {
-				console.log(`Found new release ${tag} (remote), but it is superseded by ${latestRelease} (local)`)
+				// found a new release, but it's not the most recent
 				await qm.produce(repository, new RepoCommand('DONE', repository))
 			}
 		} catch (e) {
-			console.error(`Could not determine latest release between '${latestRelease}' (local) and '${tag}' (remote)`)
+			// could not determine latest release between local and remote
+			console.error(e)
 			await qm.produce(repository, new RepoCommand('ERROR', repository))
 		}
 	} else {
-		console.log(`Release ${tag} already downloaded, skipping...`)
+		// this release has already been downloaded
 		await qm.produce(repository, new RepoCommand('DONE', repository))
 	}
 }
@@ -159,8 +163,9 @@ const handleLink = async (repository, details) => {
 		}
 
 		// if deployed via PM2, reboot
-		if (CONFIG.reboot === true) {
-			await execPromise(`pm2 restart ${repository}`)
+		if (CONFIG.reboot) {
+			let rebootCommand = CONFIG.reboot.replace(/\$repository/g, repository)
+			await execPromise(rebootCommand)
 		}
 
 		// update installed file

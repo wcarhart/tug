@@ -40,9 +40,6 @@ const validate = async () => {
 	if (!CONFIG.prefix) {
 		CONFIG.prefix = path.join(os.homedir(), 'code')
 	}
-	if (!CONFIG.reboot === true) {
-		CONFIG.reboot = false
-	}
 
 	// verify that install target is available
 	try {
