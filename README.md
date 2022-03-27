@@ -14,10 +14,10 @@ Tug deploys code based on its configurations in [config.json](config.json) file.
 | Option | Required | Type | Description | Example |
 |:------:|:--------:|:----:|-------------|---------|
 |`token`|true|string|Your GitHub API access token, [see here](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) for how to generate one.|`ghp_abc1234`|
-|`repositories`|true|array|A list (`username/repository`) of your desired repositories to tug (sync). Each repository will create a route `/:username/:repository` in tug that can be used for registering webhooks.|`wcarhart/tug`|
+|`repositories`|true|array|A list of objects (with required field `name` (`username/repository`), optional field `ignore`) of your desired repositories to tug (sync). Each repository will create a route `/:username/:repository` in tug based on the repository's `name` field that can be used for registering webhooks. The `ignore` field is an optional list of files to ignore when tug updates the repository.|`[{"name":"wcarhart/tug","ignore":[".env","secrets/api.cer"]}]`|
 |`prefix`|false|string|The path prefix where to install your downloaded code (this directory will be created if it does not exist) (default: `$HOME/code`).|`/home/me/mycode`|
 |`releases`|false|string|The path where your releases will be downloaded (this directory will be created if it does not exist) (default: `./releases`).|`./myreleases`|
-|`reboot`|false|string|A shell command to run after your tug is complete. You can use `$repository` to reference your repository's name in the command.|`pm2 restart $repository`|
+|`reboot`|false|string|A shell command to run after your tug is complete. You can use `$repository` to reference your repository's name in the command.|`cd ~/code/$repository ; yarn install; pm2 restart $repository`|
 
 ## Available endpoints
 Use `GET /` to see the available repositories with tug.
@@ -94,6 +94,9 @@ Tug foregoes external messaging queues like Kafka or RabbitMQ for simplicity and
 
 #### How does tug compare versions?
 Tug uses [compare-versions](https://github.com/omichelsen/compare-versions) to compare Git tags. Tug only supports [Semantic Versioning](https://semver.org/). Using other version schemes can cause tug to malfunction.
+
+#### I have an `.env` file on my server that is not checked into Git. Will tug overwrite it? Can I tell tug to ignore it?
+Tug performs a clean install based on the release tarball, meaning that _anything not in the Git release (e.g. `.env` files) will not be in the resulting update_. To prevent losing data, you can provide the `ignore` field for each repository in config.json, which is a list of files to ignore while updating code. Note that including files in `ignore` that are not present in the repository will result in an error in tug.
 
 #### How does tug manage state?
 Repositories adhere to the following state diagram. You can see the current repository state via `GET /status`.

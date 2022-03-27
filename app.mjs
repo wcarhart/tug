@@ -54,10 +54,10 @@ const validate = async () => {
 	}
 
 	// verify that each repository CONFIG.repositories is accessible
-	for (let [index, repository] of CONFIG.repositories.entries()) {
+	for (let [index, repository] of CONFIG.repositories.map(r => r.name).entries()) {
 		if (repository.endsWith('/')) {
 			repository = repository.replace(/\/*$/, '').replace(/^\/*/, '')
-			CONFIG.repositories[index] = repository
+			CONFIG.repositories.map(r => r.name)[index] = repository
 		}
 
 		console.log(`Checking ${repository}...`)
@@ -81,13 +81,13 @@ const validate = async () => {
 	console.log(`Creating release file structure...`)
 	try {
 		await fs.promises.access(CONFIG.releases)
-		for (let repository of CONFIG.repositories) {
+		for (let repository of CONFIG.repositories.map(r => r.name)) {
 			await fs.promises.access(path.join(CONFIG.releases, repository))
 		}
 	} catch (e) {
 		try {
 			await fs.promises.mkdir(CONFIG.releases, { recursive: true })
-			for (let repository of CONFIG.repositories) {
+			for (let repository of CONFIG.repositories.map(r => r.name)) {
 				await fs.promises.mkdir(path.join(CONFIG.releases, repository), { recursive: true})
 			}
 		} catch (e) {
@@ -103,7 +103,7 @@ await validate()
 // start queue service
 const qm = new QueueManager()
 await qm.restore()
-for (let repository of CONFIG.repositories) {
+for (let repository of CONFIG.repositories.map(r => r.name)) {
 	if (!Object.keys(qm.queues).includes(repository)) {
 		qm.createQueue(repository)
 	}
@@ -130,7 +130,7 @@ app.use(
 
 // see what repositories are available for sync'ing
 app.get('/', async (req, res, next) => {
-	res.status(200).json(CONFIG.repositories)
+	res.status(200).json(CONFIG.repositories.map(r => r.name))
 })
 
 // get app status
@@ -145,7 +145,7 @@ app.get('/status', async (req, res, next) => {
 		LINK: 'installing updates...'
 	}
 
-	for (let repository of CONFIG.repositories) {
+	for (let repository of CONFIG.repositories.map(r => r.name)) {
 		let installedFile = path.resolve(path.join(CONFIG.releases, repository, '.installed'))
 		let version = ''
 		try {
@@ -173,7 +173,7 @@ app.post('/:user/:repo', async (req, res, next) => {
 	let repository = `${req.params.user}/${req.params.repo}`
 
 	// make sure we can sync the desired repository
-	if (!CONFIG.repositories.includes(repository)) {
+	if (!CONFIG.repositories.map(r => r.name).includes(repository)) {
 		console.error(`Unknown repository: ${repository}`)
 		res.status(404).json('error')
 		return

@@ -74,7 +74,7 @@ const handleTug = async (repository, details) => {
 	let tag = details.tag
 	let releasePath = path.join(CONFIG.releases, repository)
 	let localReleases = await fs.promises.readdir(releasePath)
-	localReleases = localReleases.filter(r => r !== '.latest')
+	localReleases = localReleases.filter(r => r !== '.latest' && r !== '.installed')
 	let latestRelease
 	try {
 		latestRelease = await getLatestLocalRelease(localReleases)
@@ -167,22 +167,30 @@ const handleLink = async (repository, details) => {
 
 		// we first need to backup any environment files
 		let backedUpEnv = false
-		try {
-			await fs.promises.access(envDestFile)
-			await fse.copy(envDestFile, envBackupFile, { overwrite: true })
-			backedUpEnv = true
-		} catch (e) {}
+		let ignoreFiles = CONFIG.repositories.filter(r => r.name === repository)[0].ignore
+		if (ignoreFiles) {
+			for (let ignore of ignoreFiles) {
+				let ignoreSource = path.resolve(path.join(destination, ignore))
+				let ignoreDestination = path.resolve(path.join(envBackupDir, ignore))
+				await fse.copy(ignoreSource, ignoreDestination, { overwrite: true })
+				backedUpEnv = true
+			}
+		}
 
 		// update repository contents
 		await fse.emptyDir(destination)
 		await fse.copy(source, destination)
 
-		// restore environment files
+		// restore environment files, if we backed up any
 		if (backedUpEnv) {
-			await fse.copy(envBackupFile, envDestFile, { overwrite: true })
+			for (let ignore of ignoreFiles) {
+				let ignoreSource = path.resolve(path.join(envBackupDir, ignore))
+				let ignoreDestination = path.resolve(path.join(destination, ignore))
+				await fse.copy(ignoreSource, ignoreDestination, { overwrite: true })
+			}
 		}
 
-		// if deployed via PM2, reboot
+		// execute reboot command
 		if (CONFIG.reboot) {
 			let rebootCommand = CONFIG.reboot.replace(/\$repository/g, repository)
 			await execPromise(rebootCommand)

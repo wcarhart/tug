@@ -1,6 +1,9 @@
 {
 	"token": "",
 	"repositories": [
-		"wcarhart/tug"
+		{
+			"name": "wcarhart/tug",
+			"ignore": [ "config.json" ]
+		}
 	]
 }
