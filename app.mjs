@@ -1,16 +1,15 @@
 import axios from 'axios'
-import compareVersions from 'compare-versions'
 import compression from 'compression'
 import express from 'express'
 import fs from 'fs'
 import http from 'http'
-// import { Kafka } from 'kafkajs'
 import morgan from 'morgan'
+import os from 'os'
 import path from 'path'
-import util from 'util'
 
-// Node.js doesn't promisify this stuff for us...
-const mkdirPromise = util.promisify(fs.mkdir)
+import { QueueManager } from './queue.mjs'
+import { handleRepoCommand, RepoCommand } from './consumer.mjs'
+import { getLatestLocalRelease } from './utilities.mjs'
 
 // we can't use ESModule imports to get JSON content, so we use
 // good ol' `require`
@@ -37,6 +36,24 @@ const validate = async () => {
 	// fill optional keys with defaults
 	if (!CONFIG.releases) {
 		CONFIG.releases = './releases'
+	}
+	if (!CONFIG.prefix) {
+		CONFIG.prefix = path.join(os.homedir(), 'code')
+	}
+	if (!CONFIG.reboot === true) {
+		CONFIG.reboot = false
+	}
+
+	// verify that install target is available
+	try {
+		await fs.promises.access(CONFIG.prefix)
+	} catch (e) {
+		await fs.promises.mkdir(CONFIG.prefix, { recursive: true })
+	}
+	try {
+		await fs.promises.access(path.join(CONFIG.prefix, '.env'))
+	} catch (e) {
+		await fs.promises.mkdir(path.join(CONFIG.prefix, '.env'), { recursive: true })
 	}
 
 	// verify that each repository CONFIG.repositories is accessible
@@ -72,9 +89,9 @@ const validate = async () => {
 		}
 	} catch (e) {
 		try {
-			await mkdirPromise(CONFIG.releases, { recursive: true })
+			await fs.promises.mkdir(CONFIG.releases, { recursive: true })
 			for (let repository of CONFIG.repositories) {
-				await mkdirPromise(path.join(CONFIG.releases, repository), { recursive: true})
+				await fs.promises.mkdir(path.join(CONFIG.releases, repository), { recursive: true})
 			}
 		} catch (e) {
 			console.error(`Could not create release directory '${CONFIG.releases}'`)
@@ -83,39 +100,18 @@ const validate = async () => {
 	}
 }
 
-// get the latest local release from CONFIG.releases
-const getLatestLocalRelease = async (releases) => {
-	let latestRelease
-	for (let release of releases) {
-		if (latestRelease === undefined) {
-			latestRelease = release
-		} else {
-			if (compareVersions(release, latestRelease) === 1) {
-				latestRelease = release
-			}
-		}
-	}
-	return latestRelease
-}
-
-// download a release from GitHub
-const downloadRelease = async (tag, url, releases) => {
-	let filename = path.join(releases, tag)
-	let response = await axios.get(url, {
-		headers: { Authorization: `token ${CONFIG.token}` },
-		responseType: 'stream'
-	})
-	response.data.pipe(fs.createWriteStream(filename))
-}
-
 // validate app configuration
 await validate()
 
-// start Kafka
-// const kafka = new Kafka({
-// 	clientId: 'my-app',
-// 	brokers: ['kafka1:9092', 'kafka2:9092'],
-// })
+// start queue service
+const qm = new QueueManager()
+await qm.restore()
+for (let repository of CONFIG.repositories) {
+	if (!Object.keys(qm.queues).includes(repository)) {
+		qm.createQueue(repository)
+	}
+	qm.createConsumer(repository, handleRepoCommand)
+}
 
 // create app
 require('dotenv').config()
@@ -126,6 +122,7 @@ app.use(compression())
 app.use(
 	morgan((tokens, req, res) => {
 		return [
+			tokens.date(req, res, 'iso'),
 			tokens.method(req, res),
 			tokens.url(req, res),
 			tokens.status(req, res),
@@ -141,7 +138,33 @@ app.get('/', async (req, res, next) => {
 
 // get app status
 app.get('/status', async (req, res, next) => {
+	let results = []
+	let statuses = {
+		DONE: 'idle',
+		ERROR: 'error',
+		CHECK: 'checking for updates...',
+		TUG: 'pulling updates...',
+		UNPACK: 'installing updates...',
+		LINK: 'installing updates...'
+	}
 
+	for (let repository of CONFIG.repositories) {
+		let installedFile = path.resolve(path.join(CONFIG.releases, repository, '.installed'))
+		let latestRelease = ''
+		try {
+			await fs.promises.access(installedFile)
+			let fileContents = await fs.promises.readFile(installedFile)
+			latestRelease = fileContents.toString()
+		} catch (e) {}
+
+		let repo = {
+			name: repository,
+			status: statuses[qm.queues[repository].consumed[qm.queues[repository].consumed.length - 1].data.command],
+			version: latestRelease
+		}
+		results.push(repo)
+	}
+	res.status(200).json(results)
 })
 
 // tug (pull) new release for specific repository
@@ -158,56 +181,9 @@ app.get('/:user/:repo', async (req, res, next) => {
 		return
 	}
 
-	// get latest release
-	let response
-	try {
-		response = await axios.get(`https://api.github.com/repos/${repository}/releases/latest`, {
-			headers: { Authorization: `token ${CONFIG.token}` }
-		})
-
-		// we return immediately regardless of whether we can download the release, because
-		// we need to respond to the GitHub webhook promptly; then, we can attempt download
-		// asynchronously
-		res.status(200).json('success')
-	} catch (e) {
-		res.status(500).json('error')
-		return
-	}
-
-	// determine latest local release that's already been downloaded
-	let data = response.data
-	let releasePath = path.join(CONFIG.releases, repository)
-	let localReleases = await fs.promises.readdir(releasePath).filter(r => r !== '.latest')
-	let latestRelease
-	try {
-		latestRelease = await getLatestLocalRelease(localReleases)
-	} catch (e) {
-		console.error(`Could not determine most recent local release from: ${localReleases.join(', ')}`)
-		return
-	}
-
-	// attempt to upgrade local to latest remote release
-	if (!localReleases.includes(data.tag_name)) {
-		try {
-			if (latestRelease === undefined || compareVersions(data.tag_name, latestRelease) === 1) {
-				console.log(`Found new release ${data.tag_name}, downloading...`)
-				try {
-					await downloadRelease(data.tag_name, data.tarball_url, releasePath)
-				} catch (e) {
-					console.error('Error while downloading release')
-					return
-				}
-				console.log(`Downloaded release ${data.tag_name} to ${path.resolve(releasePath)}`)
-			} else {
-				console.log(`Found new release ${data.tag_name} (remote), but it is superseded by ${latestRelease} (local)`)
-			}
-		} catch (e) {
-			console.error(`Could not determine latest release between '${latestRelease}' (local) and '${data.tag_name}' (remote)`)
-			return
-		}
-	} else {
-		console.log(`Release ${data.tag_name} already downloaded, skipping...`)
-	}
+	// if successful, produce CHECK command
+	await qm.produce(repository, new RepoCommand('CHECK', repository))
+	res.status(200).json('success')
 })
 
 // start app

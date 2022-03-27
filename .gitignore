@@ -1,3 +1,5 @@
 node_modules/
 releases/
+queue/
+installed/
 .env
