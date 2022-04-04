@@ -191,8 +191,9 @@ const handleLink = async (repository, details) => {
 		}
 
 		// execute reboot command
-		if (CONFIG.reboot) {
-			let rebootCommand = CONFIG.reboot.replace(/\$repository/g, repository)
+		let reboot = CONFIG.repositories.filter(r => r.name === repository)[0].reboot
+		if (reboot) {
+			let rebootCommand = reboot.replace(/\$repository/g, repository)
 			await execPromise(rebootCommand)
 		}
 

@@ -14,10 +14,9 @@ Tug deploys code based on its configurations in [config.json](config.json) file.
 | Option | Required | Type | Description | Example |
 |:------:|:--------:|:----:|-------------|---------|
 |`token`|true|string|Your GitHub API access token, [see here](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) for how to generate one.|`ghp_abc1234`|
-|`repositories`|true|array|A list of objects (with required field `name` (`username/repository`), optional field `ignore`) of your desired repositories to tug (sync). Each repository will create a route `/:username/:repository` in tug based on the repository's `name` field that can be used for registering webhooks. The `ignore` field is an optional list of files to ignore when tug updates the repository.|`[{"name":"wcarhart/tug","ignore":[".env","secrets/api.cer"]}]`|
+|`repositories`|true|array|A list of objects (with required field `name` (`username/repository`), optional fields `ignore`, `reboot`) of your desired repositories to tug (sync).<br><br>Each repository will create a route `/:username/:repository` in tug's API based on the repository's `name` field that can be used for registering webhooks.<br><br>The `ignore` field is an optional list of files to ignore when tug updates the repository. Paths in the `ignore` field are relative to the repository's root, so they don't need to be absolute.<br><br>The `reboot` field is an optional shell command to run after your tug is complete. You can use `$repository` to reference your repository's name in the command.|<pre>[<br>&nbsp;&nbsp;{<br>&nbsp;&nbsp;&nbsp;&nbsp;"name": "wcarhart/tug",<br>&nbsp;&nbsp;&nbsp;&nbsp;"ignore": [<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;".env",<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"secrets/api.cer"<br>&nbsp;&nbsp;&nbsp;&nbsp;],<br>&nbsp;&nbsp;&nbsp;&nbsp;"reboot": "cd ~/code/$repository ; yarn install ; pm2 restart $repository"<br>&nbsp;&nbsp;}<br>]</pre>|
 |`prefix`|false|string|The path prefix where to install your downloaded code (this directory will be created if it does not exist) (default: `$HOME/code`).|`/home/me/mycode`|
-|`releases`|false|string|The path where your releases will be downloaded (this directory will be created if it does not exist) (default: `./releases`).|`./myreleases`|
-|`reboot`|false|string|A shell command to run after your tug is complete. You can use `$repository` to reference your repository's name in the command.|`cd ~/code/$repository ; yarn install; pm2 restart $repository`|
+|`releases`|false|string|The path where your releases will be downloaded (this directory will be created if it does not exist). This path should be relative to tug's project directory (default: `./releases`).|`./myreleases`|
 
 ## Available endpoints
 Use `GET /` to see the available repositories with tug.
@@ -26,56 +25,67 @@ Use `GET /status` to see repository statuses.
 
 Use `POST /:username/:repository` to attempt to pull a new update for repository `username/repository`.
 
+## Example
+There is a simple starter [config.json](config.json) included in tug, but it's not comprehensive. Here's a bigger example.
+```
+{
+  "token": "ghp_581433547e278503cd48f3bb88b33ee3",
+  "repositories": [
+    {
+      "name": "username/firstproject",
+      "ignore": [ ".env", "secret_key.yaml", "secrets/api.cer" ],
+      "reboot": "cd ~/code/$repository ; yarn install ; pm2 restart $repository"
+    },
+    {
+      "name": "username/secondproject",
+      "reboot": "cd ~/code/$repository ; pm2 restart $repository"
+    },
+    {
+      "name": "username/thirdproject",
+      "ignore": [ "spec.json" ]
+    }
+  ]
+}
+```
+Using this configuration, tug would create the following directory structure for your deployments, assuming you used the default prefix in your config.json and deployed tug to `~/code/wcarhart/tug`.
+```
+~
+└── code
+    ├── username
+    │   ├── firstproject
+    │   ├── secondproject
+    │   └── thirdproject
+    └── wcarhart
+        └── tug
+            ├── queue
+            └── releases
+                └── username
+                    ├── firstproject
+                    ├── secondproject
+                    └── thirdproject
+```
+The directory `~/code/username` would be where active services are deployed from. It's similar to where you'd put your code on the machine if you'd deployed it manually. This folder will always contain the latest Git release deployed by tug.
+
+The directory `~/wcarhart/tug` contains the internal details for tug. You don't need to pay much attention to these, as they operate under the hood. If you're interested, tug's `queue` directory tracks the in-memory queue service's backups, in case the app crashes. It is configured to store up to the last 100 events for each repository tracked via tug. Tug's `releases` directory acts as scratch space for downloaded releases from GitHub. Don't worry, tug cleans up old releases and stores everything as tarballs only.
+
 ## Deploy
-Tug is a Node.js app and can be deployed many different ways. Here is how to do it with [PM2](https://pm2.keymetrics.io/).
+Tug is a Node.js app and can be deployed many different ways.
 
-To deploy tug with PM2, grab a VM/app instance from your favorite cloud provider and do the following (adapted from [my blog](https://willcarh.art/blog/using-pm2-to-deploy-robust-nodejs-apps)).
+To play around with the application, use the `dev` Yarn script. First, clone this repository.
 ```bash
-# set up dependencies
-sudo useradd -m pm2
-sudo passwd pm2 # pick strong password, don't check into Git
-sudo usermod --shell /bin/bash pm2
-sudo usermod -aG sudo pm2
-sudo su pm2
-cd
-sudo apt-get update
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
-nvm --version # verify this works
-nvm install 15.14.0 # or, pick desired version
-npm install --global yarn
-sudo apt-get install libcap2-bin
-sudo setcap cap_net_bind_service=+ep `readlink -f \`which node\``
-npm install --global pm2@latest
-pm2 --version # verify this works
-
-# install tug
-# replace 'wcarhart' with your username
-mkdir -p code/wcarhart
-cd code/wcarhart
 git clone git@github.com:wcarhart/tug.git
+```
+Then, install depedencies and start a local development server.
+```bash
 cd tug
 yarn install
-# copy any necessary .env files to VM
-# set up tug config.json as desired
-yarn prod # verify this works, should see app at domain/IP
-pm2 start yarn --name wcarhart/tug -- prod # verify this works, should see app at domain/IP
-pm2 startup systemd
-# this will spit out another command to run, make sure you run it VERBATIM
-pm2 save
-sudo reboot
+yarn dev
 ```
-After reboot, SSH back into the VM and continue.
-```bash
-sudo su pm2
-# replace 'wcarhart' with your username
-cd ~/code/wcarhart
-sudo systemctl start pm2-pm2
-pm2 save
-```
-Then, for each repository you've included in tug's config.json, [create a new webhook](https://docs.github.com/en/developers/webhooks-and-events/webhooks/creating-webhooks) in GitHub and point it to your VM's IP/domain so tug can receive the requests. **Tug runs on port 42369 by default.**
+#### Tug runs on port 42369 by default.
+
+For production deploys, there are many different ways to deploy Node.js applications, so your specific use case is up to you. I prefer [PM2](https://pm2.keymetrics.io/). If you'd like a detailed tutorial on how to deploy tug with PM2, see my [PM2 deploy instructions](deploy.md), which were adapted from [my blog](https://willcarh.art/blog/using-pm2-to-deploy-robust-nodejs-apps).
+
+Finally, for each repository you've included in tug's `config.json` file, [create a new webhook](https://docs.github.com/en/developers/webhooks-and-events/webhooks/creating-webhooks) in GitHub and point it to your tug deployment's IP/domain so tug can receive the requests. **Tug runs on port 42369 by default.** You can change what port tug runs on by setting the environment variable `PORT` or using an `.env` file to do so.
 
 For example, if I had the repository `wcarhart/tug` in my config.json, I would need my webhook to hit `http://<ip or domain>/wcarhart/tug`.
 
@@ -84,10 +94,13 @@ For example, if I had the repository `wcarhart/tug` in my config.json, I would n
 Tug attempts to update a repository's code whenever the endpoint `/:user/:repository` is hit. This makes it easy to register webhooks. However, code is only actually pulled when there is a new GitHub release (and Git tag) available.
 
 #### Is tug a good replacement for production CI?
-No! It's a simple toy app with a "best effort" in-memory data store and no support for HTTPS. It's great for prototyping quickly, but isn't made for production environments (yet).
+No! It's a simple application with an in-memory data store and no support for HTTPS. It's great for prototyping quickly, but isn't made for production environments. If you'd like a lightweight project for managing tug deployments, check out [dock](https://github.com/wcarhart/dock).
 
 #### Why doesn't tug use [webhook secrets](https://docs.github.com/en/developers/webhooks-and-events/webhooks/securing-your-webhooks)?
-Tug doesn't actually use the incoming webhook to trigger any new code downloads. When a webhook is received, tug looks at the latest release for the repository on GitHub to determine if it should be downloaded. 
+Tug doesn't actually use the incoming webhook to trigger any new code downloads. When a webhook is received, tug looks at the latest release for the repository on GitHub to determine if it should be downloaded.
+
+#### Why doesn't tug support HTTPS or account management?
+Tug is intended to be deployed alongside (i.e. on the same VM as) production services; it's meant to be lightweight. As a result, I've developed another application, [dock](https://github.com/wcarhart/dock), for managing tug deployments. Dock can manage any number of tug servers and comes out of the box with user management (backed by MongoDB), HTTPS + CORS support, and a nice web interface.
 
 #### How does tug manage queuing?
 Tug foregoes external messaging queues like Kafka or RabbitMQ for simplicity and uses an in-memory queue service. The generalized queue service is defined in [queue.mjs](queue.mjs) and the consumer specific to tug's repository functionality is defined in [consumer.mjs](consumer.mjs) and registered in [app.mjs](app.mjs).
@@ -97,6 +110,9 @@ Tug uses [compare-versions](https://github.com/omichelsen/compare-versions) to c
 
 #### I have an `.env` file on my server that is not checked into Git. Will tug overwrite it? Can I tell tug to ignore it?
 Tug performs a clean install based on the release tarball, meaning that _anything not in the Git release (e.g. `.env` files) will not be in the resulting update_. To prevent losing data, you can provide the `ignore` field for each repository in config.json, which is a list of files to ignore while updating code. Note that including files in `ignore` that are not present in the repository will result in an error in tug.
+
+#### I've updated my repository with tug, but now I need to restart the associated service. Can tug do that for me?
+Yes! Include the `reboot` command for the repository you'd like to reboot after tug has updated code. The `reboot` command can be any shell command. You can use `$repository` verbatim (e.g. `pm2 restart $repository`) to reference your repository's name in the reboot command.
 
 #### How does tug manage state?
 Repositories adhere to the following state diagram. You can see the current repository state via `GET /status`.
