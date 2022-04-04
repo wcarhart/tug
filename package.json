@@ -1,6 +1,6 @@
 {
   "name": "tug",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "main": "app.mjs",
   "author": "Will Carhart <carhartwill@gmail.com>",
   "license": "MIT",
