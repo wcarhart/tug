@@ -18,6 +18,8 @@ export NVM_DIR="$HOME/.nvm"
 nvm --version # verify this works
 nvm install 15.14.0 # or, pick desired version
 npm install --global yarn
+# if you want to run tug on port 80, we need to give Node.js access to the
+# restricted port using libcap2
 sudo apt-get install libcap2-bin
 sudo setcap cap_net_bind_service=+ep `readlink -f \`which node\``
 npm install --global pm2@latest
